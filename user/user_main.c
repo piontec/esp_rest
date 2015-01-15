@@ -21,8 +21,6 @@
 #define user_procTaskQueueLen    1
 
 
-// GPIO2 - DHT22 data pin
-
 os_event_t    user_procTaskQueue[user_procTaskQueueLen];
 static void user_procTask(os_event_t *events);
 
@@ -38,73 +36,70 @@ static int totalCnt=0;
 void ICACHE_FLASH_ATTR
 enable_sensors()
 {
-    debug_print("a");
-    //Set GPIO13 to HIGH
+    //Set LEDGPIO to HIGH
     gpio_output_set((1<<LEDGPIO), 0, (1<<LEDGPIO), 0);
-    os_printf ("DGB: sensors enabled\n");
+    debug_print ("sensors enabled\n");
 }
 
 
 void ICACHE_FLASH_ATTR
 disable_sensors()
 {
-    //Set GPIO13 to LOW
+    //Set LEDGPIO to LOW
     gpio_output_set(0, (1<<LEDGPIO), (1<<LEDGPIO), 0);
-    os_printf ("DGB: sensors disabled\n");
+    debug_print ("sensors disabled\n");
 }
 
-void ICACHE_FLASH_ATTR convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
+void ICACHE_FLASH_ATTR
+convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
 {
     if (dhtReading == 0)
         strncpy(buf, "0.00", 4);
     char tmp [8];
     os_bzero (tmp, 8);
-    os_sprintf (tmp, "%d", dhtReading);
-    //os_printf ("DBG: tmp: %s\n", tmp);
+    debug_print (tmp, "%d", dhtReading);
+
     uint8 len = os_strlen (tmp);
     uint8 beforeSep = len - decimalPlaces;
-    //os_printf ("DBG: len: %d, before: %d\n", len, beforeSep);
     os_strncpy(buf, tmp, beforeSep);
-    //os_printf ("DBG: buf: %s\n", buf);
     buf [beforeSep] = '.';
-    //os_printf ("DBG: buf: %s\n", buf);
     os_strncpy (buf + beforeSep + 1, tmp + beforeSep, decimalPlaces);
     buf [len + 1] = 0;
-    //os_printf ("DBG: buf: %s\n", buf);
 }
 
-void ICACHE_FLASH_ATTR read_DHT22()
+void ICACHE_FLASH_ATTR
+read_DHT22()
 {
     int retry = 0;
     float *r;
     do {
         if (retry++ > 0)
         {
-            os_printf("DEBUG: DHT22 read fail, retrying, try %d/%d\n", retry, MAX_DHT_READ_RETRY);
+        	debug_print("DHT22 read fail, retrying, try %d/%d\n", retry, MAX_DHT_READ_RETRY);
             os_delay_us(DHT_READ_RETRY_DELAY_US);
         }
         r = readDHT();
     }
     while ((r[0] == 0 && r[1] == 0) && retry < MAX_DHT_READ_RETRY);
-    os_printf("DEBUG: DHT read done\n");
+    debug_print("DHT read done\n");
     lastTemp=(int)(r[0] * 100);
     lastHum=(int)(r[1] * 100);
-    //os_printf ("Temp = %d *C, Hum = %d \%\n", lastTemp, lastHum);
+
     convertToText (lastTemp, lastTempTxt, 8, 2);
     convertToText (lastHum, lastHumTxt, 8, 2);
-    os_printf ("Temp = %s *C, Hum = %s \%\n", lastTempTxt, lastHumTxt);
+    debug_print ("Temp = %s *C, Hum = %s \%\n", lastTempTxt, lastHumTxt);
 }
 
 static void ICACHE_FLASH_ATTR
 at_tcpclient_sent_cb(void *arg) {
-    os_printf("sent callback\n");
+	debug_print("TCP sent callback\n");
     struct espconn *pespconn = (struct espconn *)arg;
     espconn_disconnect(pespconn);
     // disable sensors power
     disable_sensors();
     // goto sleep ; gpio16 -> RST -- requires soldiering on ESP-03
-    os_delay_us(100);
-    os_printf ("going to deep sleep\n");
+
+    debug_print ("going to deep sleep for %ds\n", INTERVAL_S);
     system_deep_sleep(INTERVAL_S*1000*1000);
 }
 
@@ -114,42 +109,36 @@ at_tcpclient_discon_cb(void *arg) {
     os_free(pespconn->proto.tcp);
 
     os_free(pespconn);
-    os_printf("disconnect callback\n");
-
+    debug_print("TCP disconnect callback\n");
 }
 
 void ICACHE_FLASH_ATTR
 at_tcpclient_connect_cb(void *arg)
 {
     struct espconn *pespconn = (struct espconn *)arg;
-
-    os_printf("tcp client connect\r\n");
-    os_printf("pespconn %p\r\n", pespconn);
-
     char payload[512];
+
+    debug_print("TCP client connect\n");
 
     espconn_regist_sentcb(pespconn, at_tcpclient_sent_cb);
     espconn_regist_disconcb(pespconn, at_tcpclient_discon_cb);
     os_sprintf(payload, "GET http://api.thingspeak.com/update?api_key=%s&field1=%s&field2=%s HTTP/1.1\r\nHost: api.thingspeak.com\r\nUser-agent: the best\r\nConnection: close\r\n\r\n", THINGSPEAK_KEY, lastTempTxt, lastHumTxt);
-    //os_printf(payload);
-    //sent?!
     espconn_sent(pespconn, payload, strlen(payload));
 }
 
 
-void ICACHE_FLASH_ATTR send_data()
+void ICACHE_FLASH_ATTR
+send_data()
 {
     struct espconn *pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));
     if (pCon == NULL)
     {
-        os_printf("CONNECT FAIL\r\n");
+        os_printf("Error: TCP connect failed - memory allocation failed\n");
         return;
     }
     pCon->type = ESPCONN_TCP;
     pCon->state = ESPCONN_NONE;
-
     uint32_t ip = ipaddr_addr(REMOTE_IP);
-
     pCon->proto.tcp = (esp_tcp *)os_zalloc(sizeof(esp_tcp));
     pCon->proto.tcp->local_port = espconn_port();
     pCon->proto.tcp->remote_port = 80;
@@ -157,11 +146,12 @@ void ICACHE_FLASH_ATTR send_data()
     os_memcpy(pCon->proto.tcp->remote_ip, &ip, 4);
 
     espconn_regist_connectcb(pCon, at_tcpclient_connect_cb);
-    os_printf("Connecting...\n");
+    debug_print("TCP connecting...\n");
     espconn_connect(pCon);
 }
 
-void ICACHE_FLASH_ATTR sensor_timer_func(void *arg)
+void ICACHE_FLASH_ATTR
+sensor_timer_func(void *arg)
 {
     // enable sensors power
     enable_sensors();
@@ -180,22 +170,14 @@ static void ICACHE_FLASH_ATTR
 user_procTask(os_event_t *events)
 {
     os_delay_us(10);
-    os_printf("In user_procTask\n");
+    debug_print("In user_procTask\n");
 }
 
 void ICACHE_FLASH_ATTR
 initialize_timer()
 {
-    //Disarm timer
     os_timer_disarm(&sensor_timer);
-
-    //Setup timer
     os_timer_setfn(&sensor_timer, (os_timer_func_t *)sensor_timer_func, NULL);
-
-    //Arm the timer
-    //&some_timer is the pointer
-    //1000 is the fire time in ms
-    //0 for once and 1 for repeating
     os_timer_arm(&sensor_timer, 5000, 0);
 }
 
@@ -233,7 +215,6 @@ initialize_uart()
     uart_div_modify(0, UART_CLK_FREQ/BIT_RATE_115200);
     WRITE_PERI_REG(UART_CONF0(0), (STICK_PARITY_DIS)|(ONE_STOP_BIT << UART_STOP_BIT_NUM_S)| \
                    (EIGHT_BITS << UART_BIT_NUM_S));
-
     //Reset tx & rx fifo
     SET_PERI_REG_MASK(UART_CONF0(0), UART_RXFIFO_RST|UART_TXFIFO_RST);
     CLEAR_PERI_REG_MASK(UART_CONF0(0), UART_RXFIFO_RST|UART_TXFIFO_RST);
@@ -244,7 +225,7 @@ initialize_uart()
 void ICACHE_FLASH_ATTR
 config_mode()
 {
-    os_printf ("starting config mode\n");
+    os_printf ("Starting config mode\n");
     configInit();
 }
 
@@ -252,19 +233,18 @@ config_mode()
 void ICACHE_FLASH_ATTR
 normal_mode()
 {
-    os_printf ("starting normal mode\n");
-    //initialize_gpio();
-    //os_printf ("GPIO ready\n");
+    os_printf ("Starting normal mode\n");
     DHTInit();
-    os_printf ("DHT22 ready\n");
+    debug_print ("DHT22 ready\n");
     initialize_timer();
-    os_printf ("Timer ready\n");
-    os_printf ("Initialization complete, starting system task\n");
+    debug_print ("Timer ready\n");
+    os_printf ("Initialization complete, starting main task\n");
     //Start os task
     system_os_task(user_procTask, user_procTaskPrio,user_procTaskQueue, user_procTaskQueueLen);
 }
 
-void ICACHE_FLASH_ATTR boot()
+void ICACHE_FLASH_ATTR
+boot()
 {
     uint8 current_mode = wifi_get_opmode ();
     if (current_mode == STATIONAP_MODE || current_mode == SOFTAP_MODE)
@@ -274,12 +254,13 @@ void ICACHE_FLASH_ATTR boot()
 }
 
 
-void ICACHE_FLASH_ATTR resetBtnTimerCb(void *arg)
+void ICACHE_FLASH_ATTR
+resetBtnTimerCb(void *arg)
 {
     totalCnt++;
     if (!GPIO_INPUT_GET(BTNGPIO))
         resetCnt++;
-    os_printf ("DBG: reset counter %d/%d\n", resetCnt, totalCnt);
+    debug_print ("reset counter %d/%d\n", resetCnt, totalCnt);
 
     if (totalCnt < 2)
         return;
@@ -291,8 +272,7 @@ void ICACHE_FLASH_ATTR resetBtnTimerCb(void *arg)
     {
         wifi_station_disconnect();
         wifi_set_opmode(SOFTAP_MODE);
-        os_printf("Reset to AP mode. Restarting system...\n");
-        //system_restart();
+        os_printf("Selected normal mode. Restarting system...\n");
     }
     else
     {
@@ -303,7 +283,8 @@ void ICACHE_FLASH_ATTR resetBtnTimerCb(void *arg)
     totalCnt=0;
 }
 
-void ICACHE_FLASH_ATTR resetInit()
+void ICACHE_FLASH_ATTR
+resetInit()
 {
     initialize_gpio();
 

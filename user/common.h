@@ -13,6 +13,6 @@
 #define STATIONAP_MODE	0x03
 
 #define debug_print(fmt, ...) \
-            do { if (DEBUG) os_printf(##__VA_ARGS__); } while (0)
+            do { if (DEBUG) os_printf("DBG: %s", ##__VA_ARGS__); } while (0)
 
 #endif
