@@ -35,3 +35,6 @@ firmware/
 # Project files
 .project
 .cproject
+
+# secret
+user/private_user_config.h
