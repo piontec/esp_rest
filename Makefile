@@ -17,10 +17,10 @@ XTENSA_TOOLS_ROOT ?= /opt/xtensa-lx106-elf/bin
 
 # base directory of the ESP8266 SDK package, absolute
 #SDK_BASE	?= /opt/Espressif/ESP8266_SDK
-SDK_BASE	?= /media/sf_esp8266/sdk
+SDK_BASE	?= /home/esp8266/sdk
 
 #Esptool.py path and port
-ESPTOOL		?= esptool.py
+ESPTOOL		?= ./esptool.py
 ESPPORT		?= /dev/ttyUSB0
 
 # name for the target project

@@ -52,12 +52,12 @@ disable_sensors()
 
 void ICACHE_FLASH_ATTR
 convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
-{
+{    
     if (dhtReading == 0)
         strncpy(buf, "0.00", 4);
     char tmp [8];
     os_bzero (tmp, 8);
-    debug_print (tmp, "%d", dhtReading);
+    os_sprintf (tmp, "%d", dhtReading);
 
     uint8 len = os_strlen (tmp);
     uint8 beforeSep = len - decimalPlaces;
@@ -83,11 +83,10 @@ read_DHT22()
     while ((r[0] == 0 && r[1] == 0) && retry < MAX_DHT_READ_RETRY);
     debug_print("DHT read done\n");
     lastTemp=(int)(r[0] * 100);
-    lastHum=(int)(r[1] * 100);
-
-    convertToText (lastTemp, lastTempTxt, 8, 2);
+    lastHum=(int)(r[1] * 100);    
+    convertToText (lastTemp, lastTempTxt, 8, 2);    
     convertToText (lastHum, lastHumTxt, 8, 2);
-    debug_print ("Temp = %s *C, Hum = %s \%\n", lastTempTxt, lastHumTxt);
+    debug_print ("Temp = %s *C, Hum = %s %\n", lastTempTxt, lastHumTxt);
 }
 
 static void ICACHE_FLASH_ATTR

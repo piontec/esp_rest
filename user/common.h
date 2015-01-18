@@ -12,7 +12,16 @@
 #define SOFTAP_MODE	0x02
 #define STATIONAP_MODE	0x03
 
-#define debug_print(fmt, ...) \
-            do { if (DEBUG) os_printf("DBG: %s", ##__VA_ARGS__); } while (0)
+#define debug_print(...) \
+            do { if (DEBUG) os_printf("DBG: "); os_printf(__VA_ARGS__); } while (0)
+//#define debug_print(fmt, ...) \
+//            do { if (DEBUG) os_printf("DBG: %s", ##__VA_ARGS__); } while (0)
+//#define debug_print(txt, ...) \
+//            if (DEBUG) os_printf("DBG: %s", txt);
+//#ifdef DEBUG
+//    #define debug_print(txt) os_printf("DBG: %s", txt);
+//#else
+//    #define debug_print(txt)
+//#endif
 
 #endif

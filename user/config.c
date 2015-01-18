@@ -14,12 +14,12 @@ static esp_tcp espTcp;
 
 static void ICACHE_FLASH_ATTR cfgSentCb(void *arg)
 {
-    os_printf ("Send callback - writing config connection\n");
+    debug_print ("Send callback - writing config connection\n");
 }
 
 static void ICACHE_FLASH_ATTR printAndSend(struct espconn *conn, char *msg)
 {
-    os_printf (msg);
+    debug_print (msg);
     espconn_sent (conn, msg, os_strlen (msg));
 }
 
@@ -41,9 +41,7 @@ static void ICACHE_FLASH_ATTR setClientMode(struct espconn *conn, char *ssid, ch
 
     os_printf ("Setting new station mode config\n");
     wifi_set_opmode(STATION_MODE);
-//        wifi_station_disconnect();
     wifi_station_set_config(&stconf);
-//       wifi_station_connect();
 }
 
 static void ICACHE_FLASH_ATTR processWifiSet(struct espconn *conn, char *buf, unsigned short len)
