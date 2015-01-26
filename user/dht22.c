@@ -18,12 +18,14 @@
 #include "espconn.h"
 #include "mem.h"
 #include "gpio.h"
+#include "common.h"
 
 #define MAXTIMINGS 10000
 #define BREAKTIME 20
+#define MAXTRY 200000
+#define DHT_PIN 2
 
-float * ICACHE_FLASH_ATTR
-readDHT(void)
+float * ICACHE_FLASH_ATTR readDHT(void)
 {
     static float r[2];
     int counter = 0;
@@ -31,30 +33,28 @@ readDHT(void)
     int i = 0;
     int j = 0;
     int checksum = 0;
-    //int bitidx = 0;
-    //int bits[250];
 
     int data[5];
 
     data[0] = data[1] = data[2] = data[3] = data[4] = 0;
 
-    GPIO_OUTPUT_SET(2, 1);
+    GPIO_OUTPUT_SET(DHT_PIN, 1);
     os_delay_us(250000);
-    GPIO_OUTPUT_SET(2, 0);
+    GPIO_OUTPUT_SET(DHT_PIN, 0);
     os_delay_us(20000);
-    GPIO_OUTPUT_SET(2, 1);
+    GPIO_OUTPUT_SET(DHT_PIN, 1);
     os_delay_us(40);
-    GPIO_DIS_OUTPUT(2);
+    GPIO_DIS_OUTPUT(DHT_PIN);
     PIN_PULLUP_EN(PERIPHS_IO_MUX_GPIO2_U);
 
 
     // wait for pin to drop?
-    while (GPIO_INPUT_GET(2) == 1 && i<200000) {
+    while (GPIO_INPUT_GET(DHT_PIN) == 1 && i<MAXTRY) {
         os_delay_us(1);
         i++;
     }
 
-    if(i==200000) {
+    if(i==MAXTRY) {
         os_printf ("ERROR: GPIO wait error");
         return r;
     }
@@ -63,13 +63,13 @@ readDHT(void)
 
     for (i = 0; i < MAXTIMINGS; i++) {
         counter = 0;
-        while ( GPIO_INPUT_GET(2) == laststate) {
+        while ( GPIO_INPUT_GET(DHT_PIN) == laststate) {
             counter++;
             os_delay_us(1);
             if (counter == 1000)
                 break;
         }
-        laststate = GPIO_INPUT_GET(2);
+        laststate = GPIO_INPUT_GET(DHT_PIN);
         if (counter == 1000) break;
 
         //bits[bitidx++] = counter;
@@ -84,12 +84,6 @@ readDHT(void)
     }
 
 
-//    for (i=3; i<bitidx; i+=2) {
-//        os_printf("bit %d: %d\n", i-3, bits[i]);
-//        os_printf("bit %d: %d (%d)\n", i-2, bits[i+1], bits[i+1] > BREAKTIME);
-//    }
-    //os_printf("Data (%d): 0x%x 0x%x 0x%x 0x%x 0x%x\n", j, data[0], data[1], data[2], data[3], data[4]);
-
     float temp_p, hum_p;
     if (j >= 39) {
         checksum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
@@ -103,12 +97,15 @@ readDHT(void)
             temp_p /= 10.0;
             if (data[2] & 0x80)
                 temp_p *= -1;
-            //os_printf("Temp =  %d *C, Hum = %d %%\n", (int)(temp_p*100), (int)(hum_p*100));
             r[0] = temp_p;
             r[1] = hum_p;
 
         }
+        else
+        	debug_print("ERROR: DHT22 checksum is not correct");
     }
+    else
+    	debug_print("ERROR: j < 39");
     return r;
 }
 

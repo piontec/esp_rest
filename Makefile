@@ -12,15 +12,14 @@ BUILD_BASE	= build
 FW_BASE		= firmware
 
 # Base directory for the compiler
-#XTENSA_TOOLS_ROOT ?= /opt/Espressif/crosstool-NG/builds/xtensa-lx106-elf/bin
-XTENSA_TOOLS_ROOT ?= /opt/xtensa-lx106-elf/bin
+XTENSA_TOOLS_ROOT ?= /opt/Espressif/crosstool-NG/builds/xtensa-lx106-elf/bin
 
-# base directory of the ESP8266 SDK package, absolute
-#SDK_BASE	?= /opt/Espressif/ESP8266_SDK
-SDK_BASE	?= /home/esp8266/sdk
+# base directory of the xtensa package, absolute
+SDK_BASE	?= /opt/Espressif/xtensalibs
 
 #Esptool.py path and port
-ESPTOOL		?= ./esptool.py
+#ESPTOOL		?= esptool.py
+ESPTOOL		?= /opt/Espressif/esptool-py/esptool.py
 ESPPORT		?= /dev/ttyUSB0
 
 # name for the target project
@@ -34,13 +33,14 @@ EXTRA_INCDIR    = include /opt/Espressif/include
 LIBS		= c gcc hal pp phy net80211 lwip wpa main
 
 # compiler flags using during compilation of source files
-CFLAGS		= -Os -g -O2 -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH
+CFLAGS		= -Os -g -O2 -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH -I/opt/Espressif/esp_iot_sdk/include/ -L/opt/Espressif/esp_iot_sdk/lib/
 
 # linker flags used to generate the main object file
-LDFLAGS		= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static
+LDFLAGS		= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static  -L/opt/Espressif/esp_iot_sdk/lib/
+
 
 # linker script used for the above linkier step
-LD_SCRIPT	= eagle.app.v6.ld
+LD_SCRIPT	= -T /opt/Espressif/esp_iot_sdk/ld/eagle.app.v6.ld
 
 # various paths from the SDK used in this project
 SDK_LIBDIR	= lib
@@ -76,8 +76,6 @@ OBJ		:= $(patsubst %.c,$(BUILD_BASE)/%.o,$(SRC))
 LIBS		:= $(addprefix -l,$(LIBS))
 APP_AR		:= $(addprefix $(BUILD_BASE)/,$(TARGET)_app.a)
 TARGET_OUT	:= $(addprefix $(BUILD_BASE)/,$(TARGET).out)
-
-LD_SCRIPT	:= $(addprefix -T$(SDK_BASE)/$(SDK_LDDIR)/,$(LD_SCRIPT))
 
 INCDIR	:= $(addprefix -I,$(SRC_DIR))
 EXTRA_INCDIR	:= $(addprefix -I,$(EXTRA_INCDIR))
