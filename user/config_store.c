@@ -5,8 +5,6 @@
  * 3-clause BSD license to be found in the LICENSE.BSD file.
  */
 
-#include "dce_common.h"
-#include "dce_private.h"
 #include "config_store.h"
 #include "user_interface.h"
 #include "spi_flash.h"
@@ -23,14 +21,14 @@ static int s_config_loaded = 0;
 
 void ICACHE_FLASH_ATTR config_read(config_t* config)
 {
-    spi_flash_read(CONFIG_ADDR, (uint32_t*) config, sizeof(config_t));
+    spi_flash_read(CONFIG_ADDR, (uint32*) config, sizeof(config_t));
 }
 
 void ICACHE_FLASH_ATTR config_write(config_t* config)
 {
     ETS_UART_INTR_DISABLE();
     spi_flash_erase_sector(CONFIG_SECTOR);
-    spi_flash_write(CONFIG_ADDR, (uint32_t*) config, sizeof(config_t));
+    spi_flash_write(CONFIG_ADDR, (uint32*) config, sizeof(config_t));
     ETS_UART_INTR_ENABLE();
 }
 
@@ -51,7 +49,7 @@ void ICACHE_FLASH_ATTR config_save()
     config_read(&tmp);
     if (memcmp(&tmp, &s_config, sizeof(config_t)) != 0)
     {
-        DCE_FAIL("config verify failed");
+        os_printf("config verify failed");
     }
 }
 
@@ -70,7 +68,6 @@ void ICACHE_FLASH_ATTR config_init_default()
     config_t* config = config_get();
     config->magic = CONFIG_MAGIC;
     config->version = CONFIG_VERSION;
-    config->baud_rate = 9600;
     config_save();
     
     ETS_UART_INTR_DISABLE();

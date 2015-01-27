@@ -8,15 +8,17 @@
 #ifndef CONFIG_STORE_H
 #define CONFIG_STORE_H
 
-#define CONFIG_MAGIC   0x42
+#define CONFIG_MAGIC   0x42 // the answer to the question of live and everything
 #define CONFIG_VERSION 1
 
-#include <stdint.h>
+#include <c_types.h>
 
 typedef struct {
-    int32_t magic;
-    int32_t version;
-    int32_t baud_rate;
+    uint32 magic;
+    uint32 version;
+    uint32 devid;
+    uint32 interval_sec;
+    char uri [256];
     // bump CONFIG_VERSION when adding new fields
 } config_t;
 
