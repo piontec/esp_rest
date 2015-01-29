@@ -10,14 +10,16 @@
 
 #define CONFIG_MAGIC   0x42 // the answer to the question of live and everything
 #define CONFIG_VERSION 1
+#define DEFAULT_INTERVAL 60
+#define DEFAULT_BOOT_CFGMODE 1
 
 #include <c_types.h>
 
 typedef struct {
     uint32 magic;
     uint32 version;
-    uint32 devid;
     uint32 interval_sec;
+    char boot_config;
     char uri [256];
     // bump CONFIG_VERSION when adding new fields
 } config_t;

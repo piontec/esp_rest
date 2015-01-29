@@ -16,6 +16,7 @@
 #include "mem.h"
 #include "ip_addr.h"
 #include "espconn.h"
+#include "config_store.h"
 
 #define user_procTaskPrio        0
 #define user_procTaskQueueLen    1
@@ -31,10 +32,9 @@ char lastTempTxt [8];
 char lastHumTxt [8];
 static int resetCnt=0;
 static int totalCnt=0;
+static config_t* s_conf;
 
-
-void ICACHE_FLASH_ATTR
-enable_sensors()
+static void ICACHE_FLASH_ATTR enable_sensors()
 {
     //Set LEDGPIO to HIGH
     gpio_output_set((1<<LEDGPIO), 0, (1<<LEDGPIO), 0);
@@ -42,16 +42,14 @@ enable_sensors()
 }
 
 
-void ICACHE_FLASH_ATTR
-disable_sensors()
+static void ICACHE_FLASH_ATTR disable_sensors()
 {
     //Set LEDGPIO to LOW
     gpio_output_set(0, (1<<LEDGPIO), (1<<LEDGPIO), 0);
     debug_print ("sensors disabled\n");
 }
 
-void ICACHE_FLASH_ATTR
-convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
+static void ICACHE_FLASH_ATTR convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
 {    
     if (dhtReading == 0)
         strncpy(buf, "0.00", 4);
@@ -67,8 +65,7 @@ convertToText (int dhtReading, char *buf, uint8 maxLength, uint8 decimalPlaces)
     buf [len + 1] = 0;
 }
 
-void ICACHE_FLASH_ATTR
-read_DHT22()
+static void ICACHE_FLASH_ATTR read_DHT22()
 {
     int retry = 0;
     float *r;
@@ -89,8 +86,8 @@ read_DHT22()
     debug_print ("Temp = %s *C, Hum = %s %\n", lastTempTxt, lastHumTxt);
 }
 
-static void ICACHE_FLASH_ATTR
-at_tcpclient_sent_cb(void *arg) {
+static void ICACHE_FLASH_ATTR at_tcpclient_sent_cb(void *arg)
+{
 	debug_print("TCP sent callback\n");
     struct espconn *pespconn = (struct espconn *)arg;
     espconn_disconnect(pespconn);
@@ -102,8 +99,8 @@ at_tcpclient_sent_cb(void *arg) {
     system_deep_sleep(INTERVAL_S*1000*1000);
 }
 
-static void ICACHE_FLASH_ATTR
-at_tcpclient_discon_cb(void *arg) {
+static void ICACHE_FLASH_ATTR at_tcpclient_discon_cb(void *arg)
+{
     struct espconn *pespconn = (struct espconn *)arg;
     os_free(pespconn->proto.tcp);
 
@@ -111,8 +108,7 @@ at_tcpclient_discon_cb(void *arg) {
     debug_print("TCP disconnect callback\n");
 }
 
-void ICACHE_FLASH_ATTR
-at_tcpclient_connect_cb(void *arg)
+static void ICACHE_FLASH_ATTR at_tcpclient_connect_cb(void *arg)
 {
     struct espconn *pespconn = (struct espconn *)arg;
     char payload[512];
@@ -126,8 +122,7 @@ at_tcpclient_connect_cb(void *arg)
 }
 
 
-void ICACHE_FLASH_ATTR
-send_data()
+static void ICACHE_FLASH_ATTR send_data()
 {
     struct espconn *pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));
     if (pCon == NULL)
@@ -149,8 +144,7 @@ send_data()
     espconn_connect(pCon);
 }
 
-void ICACHE_FLASH_ATTR
-sensor_timer_func(void *arg)
+static void ICACHE_FLASH_ATTR sensor_timer_func(void *arg)
 {
     // enable sensors power
     enable_sensors();
@@ -165,15 +159,13 @@ sensor_timer_func(void *arg)
 
 
 //Do nothing function
-static void ICACHE_FLASH_ATTR
-user_procTask(os_event_t *events)
+static void ICACHE_FLASH_ATTR user_procTask(os_event_t *events)
 {
     os_delay_us(10);
     debug_print("In user_procTask\n");
 }
 
-void ICACHE_FLASH_ATTR
-initialize_timer()
+static void ICACHE_FLASH_ATTR initialize_timer()
 {
     os_timer_disarm(&sensor_timer);
     os_timer_setfn(&sensor_timer, (os_timer_func_t *)sensor_timer_func, NULL);
@@ -181,8 +173,7 @@ initialize_timer()
 }
 
 
-void ICACHE_FLASH_ATTR
-initialize_gpio()
+static void ICACHE_FLASH_ATTR initialize_gpio()
 {
     // Initialize the GPIO subsystem.
     gpio_init();
@@ -207,8 +198,7 @@ initialize_gpio()
     gpio_output_set(0, (1<<LEDGPIO), (1<<LEDGPIO), 0);
 }
 
-void ICACHE_FLASH_ATTR
-initialize_uart()
+static void ICACHE_FLASH_ATTR initialize_uart()
 {
     //Set baud rate and other serial parameters to 115200,n,8,1
     uart_div_modify(0, UART_CLK_FREQ/BIT_RATE_115200);
@@ -221,16 +211,14 @@ initialize_uart()
     WRITE_PERI_REG(UART_INT_CLR(0), 0xffff);
 }
 
-void ICACHE_FLASH_ATTR
-config_mode()
+static void ICACHE_FLASH_ATTR config_mode()
 {
     os_printf ("Starting config mode\n");
-    configInit();
+    config_mode_start();
 }
 
 
-void ICACHE_FLASH_ATTR
-normal_mode()
+static void ICACHE_FLASH_ATTR normal_mode()
 {
     os_printf ("Starting normal mode\n");
     DHTInit();
@@ -242,19 +230,24 @@ normal_mode()
     system_os_task(user_procTask, user_procTaskPrio,user_procTaskQueue, user_procTaskQueueLen);
 }
 
-void ICACHE_FLASH_ATTR
-boot()
+static void ICACHE_FLASH_ATTR boot()
 {
-    uint8 current_mode = wifi_get_opmode ();
-    if (current_mode == STATIONAP_MODE || current_mode == SOFTAP_MODE)
-        config_mode ();
+	if (s_conf->boot_config == 1)
+	{
+		if (wifi_get_opmode() == STATION_MODE)
+		{
+			wifi_set_opmode(CFG_WIFI_MODE);
+			system_restart();
+		}
+		else
+			config_mode ();
+	}
     else
         normal_mode ();
 }
 
 
-void ICACHE_FLASH_ATTR
-resetBtnTimerCb(void *arg)
+static void ICACHE_FLASH_ATTR resetBtnTimerCb(void *arg)
 {
     totalCnt++;
     if (!GPIO_INPUT_GET(BTNGPIO))
@@ -266,26 +259,28 @@ resetBtnTimerCb(void *arg)
 
     os_timer_disarm(&resetBtntimer);
 
-    int currentMode = wifi_get_opmode();
+    //int currentMode = wifi_get_opmode();
     if (resetCnt>=2)
     {
+    	s_conf->boot_config = 1;
+    	config_save();
+    	os_printf("Restarting system into config mode...\n");
         wifi_station_disconnect();
-        wifi_set_opmode(SOFTAP_MODE);
-        os_printf("Selected normal mode. Restarting system...\n");
+        wifi_set_opmode(CFG_WIFI_MODE);
     }
     else
     {
-        os_printf("Continuing normal boot\n");
         boot();
     }
     resetCnt=0;
     totalCnt=0;
 }
 
-void ICACHE_FLASH_ATTR
-resetInit()
+static void ICACHE_FLASH_ATTR resetInit()
 {
     initialize_gpio();
+    s_conf = config_init();
+    os_printf("\n\nSoftware version: %s, config version: %d\n", SOFT_VERSION, CONFIG_VERSION);
 
     os_timer_disarm(&resetBtntimer);
     os_timer_setfn(&resetBtntimer, resetBtnTimerCb, NULL);
@@ -294,8 +289,7 @@ resetInit()
 
 
 //Init function
-void ICACHE_FLASH_ATTR
-user_init()
+void ICACHE_FLASH_ATTR user_init()
 {
     initialize_uart();
     resetInit ();

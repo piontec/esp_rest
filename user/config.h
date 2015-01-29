@@ -10,6 +10,6 @@
 #include <c_types.h>
 #include <espconn.h>
 
-void ICACHE_FLASH_ATTR configInit();
+void ICACHE_FLASH_ATTR config_mode_start();
 
 #endif

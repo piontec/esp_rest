@@ -9,6 +9,8 @@
 #include "user_interface.h"
 #include "spi_flash.h"
 #include "ets_sys.h"
+#include "common.h"
+#include "osapi.h"
 
 #define CONFIG_START_SECTOR 0x3C
 #define CONFIG_SECTOR (CONFIG_START_SECTOR + 0)
@@ -65,13 +67,16 @@ config_t* ICACHE_FLASH_ATTR config_init()
 
 void ICACHE_FLASH_ATTR config_init_default()
 {
+	debug_print("Initializing config to default values");
     config_t* config = config_get();
     config->magic = CONFIG_MAGIC;
     config->version = CONFIG_VERSION;
+    config->boot_config = DEFAULT_BOOT_CFGMODE;
+    config->interval_sec = DEFAULT_INTERVAL;
     config_save();
     
-    ETS_UART_INTR_DISABLE();
-    spi_flash_erase_sector(CONFIG_WIFI_SECTOR);
-    ETS_UART_INTR_ENABLE();
+//    ETS_UART_INTR_DISABLE();
+//    spi_flash_erase_sector(CONFIG_WIFI_SECTOR);
+//    ETS_UART_INTR_ENABLE();
 }
 

@@ -8,14 +8,15 @@
 #include "osapi.h"
 #include "common.h"
 #include "user_interface.h"
+#include "config_store.h"
+
+#define CFG_PROMPT "config# "
 
 static struct espconn espConn;
 static esp_tcp espTcp;
+static config_t* s_conf;
+static struct station_config station_mode_cfg;
 
-static void ICACHE_FLASH_ATTR cfgSentCb(void *arg)
-{
-    debug_print ("Send callback - writing config connection\n");
-}
 
 static void ICACHE_FLASH_ATTR printAndSend(struct espconn *conn, char *msg)
 {
@@ -23,97 +24,135 @@ static void ICACHE_FLASH_ATTR printAndSend(struct espconn *conn, char *msg)
     espconn_sent (conn, msg, os_strlen (msg));
 }
 
+static void ICACHE_FLASH_ATTR cfgSentCb(void *arg)
+{
+	debug_print("Send callback\n");
+}
+
 static void ICACHE_FLASH_ATTR processWifiGet(struct espconn *conn)
 {
-    static struct station_config stconf;
     char msg [256];
-    wifi_station_get_config (&stconf);
-    os_sprintf (msg, "Current wifi config: ssid = %s, key = %s\n", stconf.ssid, stconf.password);
+    os_sprintf (msg, "Current wifi config: ssid = %s, key = %s\n",
+    		station_mode_cfg.ssid, station_mode_cfg.password);
     printAndSend (conn, msg);
 }
 
-static void ICACHE_FLASH_ATTR setClientMode(struct espconn *conn, char *ssid, char *key)
+static void ICACHE_FLASH_ATTR processIntervalGet(struct espconn *conn)
 {
-    static struct station_config stconf;
-    os_strncpy (&stconf.ssid, ssid, 32);
-    os_strncpy (&stconf.password, key, 64);
-    stconf.bssid_set = 0;
+	s_conf = config_get();
 
-    os_printf ("Setting new station mode config\n");
+    char msg [32];
+    os_sprintf (msg, "Current interval %d s\n", s_conf->interval_sec);
+    printAndSend (conn, msg);
+}
+
+static void ICACHE_FLASH_ATTR setClientMode()
+{
+    debug_print ("Setting new station mode config\n");
     wifi_set_opmode(STATION_MODE);
-    wifi_station_set_config(&stconf);
+    wifi_station_set_config(&station_mode_cfg);
 }
 
 static void ICACHE_FLASH_ATTR processWifiSet(struct espconn *conn, char *buf, unsigned short len)
 {
-    os_printf ("Parsing new wifi configuration\n");
-    char newBuf [128];
-    os_strncpy (newBuf, buf + 5, 127);
-    newBuf [127] = 0;
-    os_printf ("DEBUG: newBuf: %s\n", newBuf);
+    debug_print ("Parsing new wifi configuration\n");
+    //char newBuf [128];
+    //os_strncpy (newBuf, buf + 5, 127);
+    //newBuf [127] = 0;
+    char* newBuf = buf + 5;
+    newBuf [len - 5] = 0;
+    debug_print ("newBuf: %s\n", newBuf);
     char *sep = (char *) os_strstr (newBuf, " ");
     if (sep == NULL)
     {
         os_printf ("ERROR: wrong set wifi\n");
         return;
     }
-    os_printf ("DEBUG: sep_ptr: %p, newbuf_ptr: %p\n", sep, newBuf);
+    debug_print ("sep_ptr: %p, newbuf_ptr: %p\n", sep, newBuf);
     char ssid [32];
     char key [64];
-    os_printf ("DEBUG: len ssid: %d\n", sep-newBuf);
     os_strncpy (ssid, newBuf, sep - newBuf);
-    os_printf ("DEBUG: new ssid: %s\n", ssid);
+    debug_print ("new ssid: %s\n", ssid);
     int keyLen = os_strlen (sep + 1);
     os_strncpy (key, sep + 1, keyLen - 1);
     key [keyLen - 1] = 0;
-    os_printf ("DEBUG: new key: %s\n", key);
+    debug_print ("new key: %s\n", key);
 
-    os_printf ("New SSID = %s, new key = %s|\n", ssid, key);
-    setClientMode (conn, ssid, key);
+    os_strncpy (&station_mode_cfg.ssid, ssid, 32);
+    os_strncpy (&station_mode_cfg.password, key, 64);
+    station_mode_cfg.bssid_set = 0;
+}
+
+static void ICACHE_FLASH_ATTR processIntervalSet(struct espconn *conn, char *buf, unsigned short len)
+{
+	char cmd_len = 9;
+    debug_print ("Parsing new interval\n");
+    //char newBuf [128];
+    //os_strncpy (newBuf, buf + 5, 127);
+    //newBuf [127] = 0;
+    char* newBuf = buf + cmd_len;
+    newBuf [len - cmd_len] = 0;
+    debug_print ("newBuf: %s\n", newBuf);
+    int interval = atoi(newBuf);
+    debug_print("New interval is %d\n", interval);
+    s_conf->interval_sec = interval;
 }
 
 static void ICACHE_FLASH_ATTR processGetReq(struct espconn *conn, char *buf, unsigned short len)
 {
-    os_printf ("Got new get request\n");
+    debug_print ("Got new get request\n");
     if (((char *) os_strstr(buf, "wifi")) == buf)
         processWifiGet (conn);
+    else if (((char *) os_strstr(buf, "interval")) == buf)
+            processIntervalGet (conn);
     else
         os_printf ("ERROR: unknown get command: %s\n", buf);
 }
 
 static void ICACHE_FLASH_ATTR processSetReq(struct espconn *conn, char *buf, unsigned short len)
 {
-    os_printf ("Got new set request\n");
+    debug_print ("Got new set request\n");
     if (((char *) os_strstr(buf, "wifi")) == buf)
         processWifiSet (conn, buf, len);
+    else if (((char *) os_strstr(buf, "interval")) == buf)
+        processIntervalSet (conn, buf, len);
     else
         os_printf ("ERROR: unknown set command: %s\n", buf);
+}
+
+void processRestart(struct espconn* conn)
+{
+	printAndSend(conn, "Saving configuration...");
+	s_conf->boot_config = 0;
+	config_save();
+	printAndSend(conn, "Restarting in STA mode...\n");
+	setClientMode();
+	system_restart();
 }
 
 static void ICACHE_FLASH_ATTR cfgRecvCb(void *arg, char *data, unsigned short len)
 {
     char buf[128];
-    os_printf ("Receive callback - reading config connection\n");
+    debug_print ("Got new config connection, len: %d\n", os_strlen(data));
+    debug_print ("%s\n", data);
     struct espconn *conn=arg;
     os_strncpy(buf, data + 4, 128);
     buf[127] = 0;
 
-    if (os_strncmp (data, "restart", 8) == 0)
-    {
-        printAndSend (conn, "Restarting...\n");
-        system_restart ();
-    }
+    if (os_strncmp (data, "restart", 7) == 0)
+    	processRestart(conn);
     else if (os_strncmp (data, "get ", 4) == 0)
         processGetReq(conn, buf, os_strlen(buf));
     else if (os_strncmp (data, "set ", 4) == 0)
         processSetReq(conn, buf, os_strlen(buf));
     else
         os_printf("ERROR: unknown command: %s\n", data);
+    printAndSend (conn, CFG_PROMPT);
 }
 
 static void ICACHE_FLASH_ATTR cfgDisconCb(void *arg)
 {
-    os_printf ("Disconnect callback - closing config connection\n");
+    os_printf ("Disconnect - closing config connection\n");
 }
 
 static void ICACHE_FLASH_ATTR cfgReconCb(void *arg, sint8 err)
@@ -123,11 +162,11 @@ static void ICACHE_FLASH_ATTR cfgReconCb(void *arg, sint8 err)
 
 static void ICACHE_FLASH_ATTR configConnectCb(void *arg)
 {
-    os_printf ("Connect callback - received new config connection\n");
+    os_printf ("Received new config connection\n");
 
     struct espconn *conn=arg;
 
-    printAndSend (conn, "config# ");
+    printAndSend (conn, CFG_PROMPT);
     espconn_regist_recvcb(conn, cfgRecvCb);
     espconn_regist_reconcb(conn, cfgReconCb);
     espconn_regist_disconcb(conn, cfgDisconCb);
@@ -136,14 +175,16 @@ static void ICACHE_FLASH_ATTR configConnectCb(void *arg)
 }
 
 
-void ICACHE_FLASH_ATTR configInit()
+void ICACHE_FLASH_ATTR config_mode_start()
 {
     espConn.type=ESPCONN_TCP;
     espConn.state=ESPCONN_NONE;
     espTcp.local_port=CONF_PORT;
     espConn.proto.tcp=&espTcp;
+    s_conf = config_get();
+    wifi_station_get_config (&station_mode_cfg);
 
-    os_printf("TCP config server init, conn=%p\n", &espConn);
+    os_printf("TCP config server started on port %d\n", CONF_PORT);
     espconn_regist_connectcb(&espConn, configConnectCb);
     espconn_accept(&espConn);
 }
