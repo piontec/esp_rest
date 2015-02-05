@@ -92,7 +92,7 @@ static void ICACHE_FLASH_ATTR at_tcpclient_sent_cb(void *arg)
     struct espconn *pespconn = (struct espconn *)arg;
     espconn_disconnect(pespconn);
     // disable sensors power
-    disable_sensors();
+    //disable_sensors();
     // goto sleep ; gpio16 -> RST -- requires soldiering on ESP-03
 
     debug_print ("going to deep sleep for %ds\n", INTERVAL_S);
@@ -153,6 +153,8 @@ static void ICACHE_FLASH_ATTR sensor_timer_func(void *arg)
     // readDHT
     read_DHT22();
     // read pressure
+    // disable sensors
+    disable_sensors ();
     // send data
     send_data();
 }
