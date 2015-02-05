@@ -132,6 +132,11 @@ firmware:
 flash: firmware/0x00000.bin firmware/0x40000.bin
 	-$(ESPTOOL) --port $(ESPPORT) write_flash 0x00000 firmware/0x00000.bin 0x40000 firmware/0x40000.bin
 
+init: FORCE
+	-$(ESPTOOL) --port $(ESPPORT) write_flash 0x7e000 init/blank.bin 0x3e000 init/blank.bin 0x7c000 init/esp_init_data_default.bin
+
+FORCE:
+
 clean:
 	$(Q) rm -f $(APP_AR)
 	$(Q) rm -f $(TARGET_OUT)

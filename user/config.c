@@ -50,7 +50,10 @@ static void ICACHE_FLASH_ATTR setClientMode()
 {
     debug_print ("Setting new station mode config\n");
     wifi_set_opmode(STATION_MODE);
+    station_mode_cfg.bssid_set = 0;
     wifi_station_set_config(&station_mode_cfg);
+    uint8 status =wifi_station_get_connect_status();
+    debug_print("Status: %d\n", status);
 }
 
 static void ICACHE_FLASH_ATTR processWifiSet(struct espconn *conn, char *buf, unsigned short len)

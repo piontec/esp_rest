@@ -7,7 +7,7 @@
 #define USERCONFIG_H
 
 #define INTERVAL_S		 600
-#define SENSORS_READY_WAIT_US    100
+#define SENSORS_READY_WAIT_US    1200000
 #define LEDGPIO 		 12
 #define BTNGPIO 		 13
 #define CONF_PORT		 21
