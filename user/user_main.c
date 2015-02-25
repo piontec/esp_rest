@@ -30,6 +30,7 @@ static volatile ETSTimer resetBtntimer;
 int lastTemp, lastHum;
 char lastTempTxt [8];
 char lastHumTxt [8];
+char payload[512];
 static int resetCnt=0;
 static int totalCnt=0;
 static config_t* s_conf;
@@ -88,35 +89,57 @@ static void ICACHE_FLASH_ATTR read_DHT22()
 
 static void ICACHE_FLASH_ATTR at_tcpclient_sent_cb(void *arg)
 {
-	debug_print("TCP sent callback\n");
-    struct espconn *pespconn = (struct espconn *)arg;
-    espconn_disconnect(pespconn);
+    debug_print("TCP sent callback\n");
+    //struct espconn *pespconn = (struct espconn *)arg;
+    //espconn_disconnect(pespconn);
     // disable sensors power
     //disable_sensors();
     // goto sleep ; gpio16 -> RST -- requires soldiering on ESP-03
 
-    debug_print ("going to deep sleep for %ds\n", INTERVAL_S);
-    system_deep_sleep(INTERVAL_S*1000*1000);
+    //debug_print ("going to deep sleep for %ds\n", INTERVAL_S);
+    //system_deep_sleep(INTERVAL_S*1000*1000);
 }
 
-static void ICACHE_FLASH_ATTR at_tcpclient_discon_cb(void *arg)
-{
+static void ICACHE_FLASH_ATTR at_tcpclient_discon_cb(void *arg) {
+    debug_print("TCP disconnect callback\n");
     struct espconn *pespconn = (struct espconn *)arg;
     os_free(pespconn->proto.tcp);
 
     os_free(pespconn);
-    debug_print("TCP disconnect callback\n");
+   
+    debug_print ("going to deep sleep for %ds\n", INTERVAL_S);
+    system_deep_sleep(INTERVAL_S*1000*1000);
+}
+
+
+static void ICACHE_FLASH_ATTR at_tcpclient_reconnect_cb(void *arg, sint8 errType)
+{
+    struct espconn *pespconn = (struct espconn *) arg;
+    debug_print("Reconnect callback - resending with delay...\n");
+    os_delay_us(1*1000*1000);
+    debug_print ("now.\n");
+    espconn_sent(pespconn, payload, strlen(payload));
+    debug_print("resend done.\n");
+}
+
+static void ICACHE_FLASH_ATTR at_tcpclient_read_cb(void *arg, char *data, unsigned short len) 
+{
+    char buf[128];
+    debug_print("Rcv callback: %d\n", os_strlen(data));
+    debug_print("%s\n", data);
+    struct espconn *conn = arg;
+    espconn_disconnect(conn);    
 }
 
 static void ICACHE_FLASH_ATTR at_tcpclient_connect_cb(void *arg)
 {
     struct espconn *pespconn = (struct espconn *)arg;
-    char payload[512];
-
+    
     debug_print("TCP client connect\n");
 
     espconn_regist_sentcb(pespconn, at_tcpclient_sent_cb);
     espconn_regist_disconcb(pespconn, at_tcpclient_discon_cb);
+    espconn_regist_recvcb(pespconn, at_tcpclient_read_cb);
     os_sprintf(payload, "GET http://api.thingspeak.com/update?api_key=%s&field1=%s&field2=%s HTTP/1.1\r\nHost: api.thingspeak.com\r\nUser-agent: the best\r\nConnection: close\r\n\r\n", THINGSPEAK_KEY, lastTempTxt, lastHumTxt);
     espconn_sent(pespconn, payload, strlen(payload));
 }
@@ -127,19 +150,26 @@ static void ICACHE_FLASH_ATTR send_data()
     struct espconn *pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));
     if (pCon == NULL)
     {
-        os_printf("Error: TCP connect failed - memory allocation failed\n");
+        os_printf("Error: TCP connect failed - memory allocation for conn failed\n");
         return;
     }
     pCon->type = ESPCONN_TCP;
     pCon->state = ESPCONN_NONE;
     uint32_t ip = ipaddr_addr(REMOTE_IP);
     pCon->proto.tcp = (esp_tcp *)os_zalloc(sizeof(esp_tcp));
+    if (pCon->proto.tcp == NULL)
+    {
+        os_printf("Error: TCP connect failed - memory allocation for TCP failed\n");
+        return;
+    }
     pCon->proto.tcp->local_port = espconn_port();
     pCon->proto.tcp->remote_port = 80;
+    //pCon->proto.tcp->remote_port = lwip_htons(80);
 
     os_memcpy(pCon->proto.tcp->remote_ip, &ip, 4);
 
     espconn_regist_connectcb(pCon, at_tcpclient_connect_cb);
+    espconn_regist_reconcb(pCon, at_tcpclient_reconnect_cb);
     debug_print("TCP connecting...\n");
     espconn_connect(pCon);
 }
@@ -283,16 +313,25 @@ static void ICACHE_FLASH_ATTR resetInit()
     initialize_gpio();
     s_conf = config_init();
     os_printf("\n\nSoftware version: %s, config version: %d\n", SOFT_VERSION, CONFIG_VERSION);
+    debug_print("Current wifi connect status: %d\n", wifi_station_get_connect_status());
+    debug_print("Current DHCP status: %d\n", wifi_station_dhcpc_status());
+    debug_print("Current wifi mode: %d\n", wifi_get_phy_mode());
 
     os_timer_disarm(&resetBtntimer);
     os_timer_setfn(&resetBtntimer, resetBtnTimerCb, NULL);
     os_timer_arm(&resetBtntimer, 500, 1);
 }
 
+void ICACHE_FLASH_ATTR init_done()
+{
+    debug_print("INIT IS DONE!\n");
+    resetInit();
+}
 
 //Init function
 void ICACHE_FLASH_ATTR user_init()
 {
     initialize_uart();
-    resetInit ();
+    system_init_done_cb(init_done); 
+    //resetInit ();
 }

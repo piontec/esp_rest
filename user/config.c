@@ -17,6 +17,41 @@ static esp_tcp espTcp;
 static config_t* s_conf;
 static struct station_config station_mode_cfg;
 
+static uint8_t wifiStatus = STATION_IDLE;
+static void ICACHE_FLASH_ATTR wifi_check_ip(void *arg)
+{
+	struct ip_info ipConfig;
+
+	wifi_get_ip_info(STATION_IF, &ipConfig);
+	wifiStatus = wifi_station_get_connect_status();
+	if (wifiStatus == STATION_GOT_IP && ipConfig.ip.addr != 0)
+	{
+		debug_print ("WIFI - STATION_GOT_IP");
+	}
+	else
+	{
+		if(wifi_station_get_connect_status() == STATION_WRONG_PASSWORD)
+		{
+			debug_print("STATION_WRONG_PASSWORD\r\n");
+			wifi_station_connect(); 
+		}
+		else if(wifi_station_get_connect_status() == STATION_NO_AP_FOUND)
+		{ 
+			debug_print("STATION_NO_AP_FOUND\r\n");
+			wifi_station_connect(); 
+		}
+		else if(wifi_station_get_connect_status() == STATION_CONNECT_FAIL)
+		{ 
+			debug_print("STATION_CONNECT_FAIL\r\n");
+			wifi_station_connect(); 
+		}
+		else
+		{
+			debug_print("STATION_IDLE\r\n");
+		} 
+	}
+}
+
 
 static void ICACHE_FLASH_ATTR printAndSend(struct espconn *conn, char *msg)
 {
@@ -50,12 +85,12 @@ static void ICACHE_FLASH_ATTR setClientMode()
 {
     debug_print ("Setting new station mode config\n");
     wifi_set_opmode(STATION_MODE);
-    station_mode_cfg.bssid_set = 0;
     debug_print ("SSID: %s, KEY: %s, bssid_set: %d\n", station_mode_cfg.ssid,
     		station_mode_cfg.password, station_mode_cfg.bssid_set);
     wifi_station_set_config(&station_mode_cfg);
-    uint8 status =wifi_station_get_connect_status();
-    debug_print("Status: %d\n", status);
+    wifi_station_set_auto_connect(TRUE);
+    wifi_station_connect();
+    wifi_check_ip(NULL);
 }
 
 static void ICACHE_FLASH_ATTR processWifiSet(struct espconn *conn, char *buf, unsigned short len)
@@ -83,10 +118,9 @@ static void ICACHE_FLASH_ATTR processWifiSet(struct espconn *conn, char *buf, un
     os_strncpy (key, sep + 1, keyLen - 1);
     key [keyLen - 1] = 0;
     debug_print ("new key: %s\n", key);
-
+    os_memset(&station_mode_cfg, 0, sizeof(struct station_config));
     os_strncpy (&station_mode_cfg.ssid, ssid, 32);
     os_strncpy (&station_mode_cfg.password, key, 64);
-    station_mode_cfg.bssid_set = 0;
 }
 
 static void ICACHE_FLASH_ATTR processIntervalSet(struct espconn *conn, char *buf, unsigned short len)
@@ -177,12 +211,14 @@ static void ICACHE_FLASH_ATTR configConnectCb(void *arg)
     espconn_regist_reconcb(conn, cfgReconCb);
     espconn_regist_disconcb(conn, cfgDisconCb);
     espconn_regist_sentcb(conn, cfgSentCb);
-
 }
 
 
 void ICACHE_FLASH_ATTR config_mode_start()
 {
+    memset(&espConn, 0, sizeof(struct espconn));
+    memset(&espTcp, 0, sizeof(esp_tcp));
+
     espConn.type=ESPCONN_TCP;
     espConn.state=ESPCONN_NONE;
     espTcp.local_port=CONF_PORT;

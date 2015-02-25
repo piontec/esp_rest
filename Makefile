@@ -12,14 +12,15 @@ BUILD_BASE	= build
 FW_BASE		= firmware
 
 # Base directory for the compiler
-XTENSA_TOOLS_ROOT ?= /opt/Espressif/crosstool-NG/builds/xtensa-lx106-elf/bin
+#XTENSA_TOOLS_ROOT ?= /opt/Espressif/crosstool-NG/builds/xtensa-lx106-elf/bin
+XTENSA_TOOLS_ROOT ?= /opt/xtensa-lx106-elf/bin
 
-# base directory of the xtensa package, absolute
-SDK_BASE	?= /opt/Espressif/xtensalibs
+# base directory of the ESP8266 SDK package, absolute
+#SDK_BASE	?= /opt/Espressif/ESP8266_SDK
+SDK_BASE	?= /home/esp8266/sdk
 
 #Esptool.py path and port
-#ESPTOOL		?= esptool.py
-ESPTOOL		?= /opt/Espressif/esptool-py/esptool.py
+ESPTOOL		?= ./esptool.py
 ESPPORT		?= /dev/ttyUSB0
 
 # name for the target project
@@ -33,14 +34,13 @@ EXTRA_INCDIR    = include /opt/Espressif/include
 LIBS		= c gcc hal pp phy net80211 lwip wpa main
 
 # compiler flags using during compilation of source files
-CFLAGS		= -Os -g -O2 -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH -I/opt/Espressif/esp_iot_sdk/include/ -L/opt/Espressif/esp_iot_sdk/lib/
+CFLAGS		= -Os -g -O2 -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH
 
 # linker flags used to generate the main object file
-LDFLAGS		= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static  -L/opt/Espressif/esp_iot_sdk/lib/
-
+LDFLAGS		= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static
 
 # linker script used for the above linkier step
-LD_SCRIPT	= -T /opt/Espressif/esp_iot_sdk/ld/eagle.app.v6.ld
+LD_SCRIPT	= eagle.app.v6.ld
 
 # various paths from the SDK used in this project
 SDK_LIBDIR	= lib
@@ -53,6 +53,7 @@ FW_FILE_1	= 0x00000
 FW_FILE_1_ARGS	= -bo $@ -bs .text -bs .data -bs .rodata -bc -ec
 FW_FILE_2	= 0x40000
 FW_FILE_2_ARGS	= -es .irom0.text $@ -ec
+BLANKER := $(addprefix $(SDK_BASE)/,bin/blank.bin)
 
 # select which tools to use as compiler, librarian and linker
 CC		:= $(XTENSA_TOOLS_ROOT)/xtensa-lx106-elf-gcc
@@ -76,6 +77,8 @@ OBJ		:= $(patsubst %.c,$(BUILD_BASE)/%.o,$(SRC))
 LIBS		:= $(addprefix -l,$(LIBS))
 APP_AR		:= $(addprefix $(BUILD_BASE)/,$(TARGET)_app.a)
 TARGET_OUT	:= $(addprefix $(BUILD_BASE)/,$(TARGET).out)
+
+LD_SCRIPT	:= $(addprefix -T$(SDK_BASE)/$(SDK_LDDIR)/,$(LD_SCRIPT))
 
 INCDIR	:= $(addprefix -I,$(SRC_DIR))
 EXTRA_INCDIR	:= $(addprefix -I,$(EXTRA_INCDIR))
@@ -131,11 +134,7 @@ firmware:
 
 flash: firmware/0x00000.bin firmware/0x40000.bin
 	-$(ESPTOOL) --port $(ESPPORT) write_flash 0x00000 firmware/0x00000.bin 0x40000 firmware/0x40000.bin
-
-init: FORCE
-	-$(ESPTOOL) --port $(ESPPORT) write_flash 0x7e000 init/blank.bin 0x3e000 init/blank.bin 0x7c000 init/esp_init_data_default.bin
-
-FORCE:
+#	-$(ESPTOOL) --port $(ESPPORT) write_flash 0x00000 firmware/0x00000.bin 0x3c000 $(BLANKER) 0x40000 firmware/0x40000.bin
 
 clean:
 	$(Q) rm -f $(APP_AR)
